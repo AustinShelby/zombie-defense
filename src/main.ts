@@ -1,14 +1,9 @@
-import {
-  Application,
-  Graphics,
-  Container,
-  Polygon,
-  filters,
-  Rectangle,
-  Point,
-} from "pixi.js";
+import { Application, Graphics, Container, Text } from "pixi.js";
 import { Viewport } from "pixi-viewport";
 import "./index.css";
+import { Enemy, EnemyKilledError, OutOfBoundsError } from "./enemy";
+import { Tower } from "./tower";
+import { HitEnemyError } from "./projectile";
 
 abstract class Tile {
   abstract get graphics(): Graphics;
@@ -73,218 +68,12 @@ class Land extends Tile {
     if (this.hasTower) {
       return undefined;
     }
-    this.tower = new Tower(this.center.x, this.center.y);
+    this.tower = new Tower(this.center.x, this.center.y, map, selectTower);
     this.hasTower = true;
   }
 
   get graphics(): Graphics {
     return this._graphics;
-  }
-}
-
-class Tower {
-  graphics: Graphics;
-  public projectiles: Projectile[];
-
-  constructor(x: number, y: number) {
-    const radius = new Graphics();
-
-    radius
-      .beginFill(0x9999ff, 0.2)
-      .lineStyle(4, 0xffffff, 0.1, 0)
-      .drawCircle(0, 0, 64 + 32 + 64)
-      .endFill();
-
-    radius.name = "radius";
-    radius.hitArea = new Polygon([0, 0, 10, 0, 10, 10, 0, 10]);
-
-    radius.interactive = false;
-
-    const tower = new Graphics();
-    tower
-      .beginFill(0x666666)
-      .lineStyle(4, 0xffffff, 0.1, 0)
-      .drawCircle(0, 0, 20)
-      .endFill();
-    radius.addChild(tower);
-    radius.pivot.set(0, 0);
-    radius.position.set(x, y);
-    // radius.tint = 0xff0000;
-    this.graphics = radius;
-    map.addChild(this.graphics);
-    this.projectiles = [];
-  }
-
-  public isEnemyInRange(location: Point, radius: number): boolean {
-    // const towerPosition = towerRadius.getGlobalPosition();
-    const towerPosition = this.graphics.getGlobalPosition();
-
-    const distanceBetweenOrigins =
-      (location.x - towerPosition.x) * (location.x - towerPosition.x) +
-      (location.y - towerPosition.y) * (location.y - towerPosition.y);
-
-    const isInsideBounds = distanceBetweenOrigins <= (20 + 160) * 160;
-    if (isInsideBounds) {
-      const filter = new filters.ColorMatrixFilter();
-      filter.tint(0xff0000);
-      this.graphics.filters = [filter];
-    } else {
-      this.graphics.filters = [];
-    }
-    return isInsideBounds;
-    // return false;
-  }
-
-  removeProjectile(projectile: Projectile): void {
-    map.removeChild(projectile.graphics);
-
-    this.projectiles = this.projectiles.filter(
-      (projectile2) => projectile !== projectile2
-    );
-  }
-
-  shoot(enemy: Enemy): void {
-    if (this.projectiles.length > 0) {
-      return;
-    }
-
-    this.projectiles = [
-      new Projectile(enemy, this.graphics.position.x, this.graphics.position.y),
-    ];
-  }
-}
-
-class OutOfBoundsError extends Error {}
-
-export class Enemy {
-  readonly graphics: Graphics;
-  readonly container: Container;
-  private readonly path: [number, number][];
-  private pathIndex: number;
-  private speed: number;
-  private healthAmount: number;
-  private readonly maxHealth: number;
-  private readonly health: Graphics;
-
-  constructor() {
-    const container = new Container();
-    this.container = container;
-    const graphics = new Graphics();
-    this.path = [
-      [-32, 128 + 32],
-      [192 + 32, 128 + 32],
-      [192 + 32, 256 + 32],
-      [352 + 64, 256 + 32],
-    ];
-    this.healthAmount = 100;
-    this.maxHealth = 100;
-    graphics
-      .beginFill(0xaa4444)
-      .lineStyle(4, 0xffffff, 0.1, 0)
-      .drawCircle(20, 20, 20)
-      .endFill();
-
-    const healthBarContainer = new Container();
-    healthBarContainer.position.set(0, 0);
-    const healthBar = new Graphics();
-    healthBar
-      .beginFill(0xff0000)
-      .lineStyle(1, 0x000000, undefined, 0)
-      .drawRect(0, 0, 40, 10)
-      .endFill();
-
-    const health = new Graphics();
-    health
-      .beginFill(0x00ff00)
-      .lineStyle(1, 0x00000, undefined, 0)
-      .drawRect(0, 0, 40, 10)
-      .endFill();
-    this.health = health;
-    healthBarContainer.addChild(healthBar);
-    healthBarContainer.addChild(this.health);
-    healthBarContainer.position.set(0, -20);
-    // healthBar.addChild(this.health);
-    // container.addChild(healthBar);
-    container.addChild(graphics);
-    container.addChild(healthBarContainer);
-    container.pivot.set(20, 20);
-    container.position.set(this.path[0][0], this.path[0][1]);
-    this.graphics = graphics;
-    this.pathIndex = 0;
-    this.speed = 0.8;
-  }
-
-  move(delta: number): void {
-    const xDiff = Math.round(
-      this.path[this.pathIndex][0] - this.container.position.x
-    );
-    const yDiff = Math.round(
-      this.path[this.pathIndex][1] - this.container.position.y
-    );
-
-    if (xDiff === 0 && yDiff === 0) {
-      this.pathIndex += 1;
-      if (this.path.length === this.pathIndex) {
-        throw new OutOfBoundsError();
-      }
-    }
-
-    this.container.position.x +=
-      xDiff > 0 ? this.speed * delta : -this.speed * delta;
-    this.container.position.y +=
-      yDiff > 0 ? this.speed * delta : -this.speed * delta;
-  }
-
-  public takeDamage(damage: number): void {
-    this.healthAmount -= damage;
-    const healthRatio = this.healthAmount / this.maxHealth;
-    this.health.scale.set(healthRatio, 1);
-  }
-}
-
-class HitEnemyError extends Error {}
-
-class Projectile {
-  private readonly target: Enemy;
-  readonly graphics: Graphics;
-
-  constructor(target: Enemy, x: number, y: number) {
-    this.target = target;
-    const graphics = new Graphics();
-    graphics
-      .beginFill(0xaa4444)
-      .lineStyle(4, 0xffffff, 0.1, 0)
-      .drawCircle(0, 0, 10)
-      .endFill();
-    graphics.pivot.set(0, 0);
-    graphics.position.set(x, y);
-    this.graphics = graphics;
-    this.target = target;
-    map.addChild(this.graphics);
-  }
-
-  move(delta: number): void {
-    const targetPosition = this.target.graphics.getGlobalPosition();
-    // console.log(targetPosition);
-    // console.log(this.target.graphics.getLocalBounds());
-    // console.log(this.target.graphics.getGlobalPosition());
-    const ownPosition = this.graphics.getGlobalPosition();
-    console.log(targetPosition);
-    console.log(ownPosition);
-
-    const xDiff = ownPosition.x - targetPosition.x;
-    const yDiff = ownPosition.y - targetPosition.y;
-
-    if (Math.round(xDiff) === 0 && Math.round(yDiff) === 0) {
-      this.target.takeDamage(20);
-      throw new HitEnemyError();
-    }
-
-    const angle = Math.atan2(yDiff, xDiff);
-    this.graphics.position.set(
-      ownPosition.x + Math.cos(angle) * delta * 3,
-      ownPosition.y + Math.sin(angle) * delta * 3
-    );
   }
 }
 
@@ -346,19 +135,6 @@ Map.forEach((tiles, xi) =>
   })
 );
 
-// const x = new Container();
-// const c = new Graphics();
-// c.beginFill(0xffff00).drawRect(0, 0, 64, 64).endFill();
-// x.addChild(c);
-// const yy = new Container();
-// const y = new Graphics();
-// y.beginFill(0x00ffff).drawRect(0, -32, 64, 16).endFill();
-// yy.addChild(y);
-// x.addChild(yy);
-// x.position.set(32, 32);
-// x.pivot.set(32, 32);
-// map.addChild(x);
-
 viewport.addChild(map);
 
 let enemy: Enemy | undefined;
@@ -398,8 +174,62 @@ const onKeyDown = (e: KeyboardEvent) => {
 
 window.addEventListener("keydown", onKeyDown);
 
+const uiContainer = new Container();
+const ui = new Graphics();
+ui.beginFill(0x333333).drawRect(0, 0, 360, 200).endFill();
+ui.position.set(app.screen.width, 0);
+uiContainer.addChild(ui);
+uiContainer.pivot.set(uiContainer.width, 0);
+app.stage.addChild(uiContainer);
+
+let selectedTower: Tower | undefined = undefined;
+
+export type SelectTower = typeof selectTower;
+
+const textContent = `Tower radius`;
+const text = new Text(textContent, { fill: 0x000000, fontSize: 24 });
+text.position.set(8, 8);
+const upgradeButtonText = new Text("Upgrade", {
+  fill: 0x000000,
+  padding: 32,
+});
+upgradeButtonText.position.set(16, 4);
+
+const upgradeButton = new Graphics();
+upgradeButton
+  .beginFill(0x555555)
+  .drawRect(0, 0, upgradeButtonText.width + 32, 40)
+  .endFill();
+
+upgradeButton.position.set(8, 48);
+upgradeButton.interactive = false;
+upgradeButton.buttonMode = false;
+
+// text.text = "Omega";
+
+upgradeButton.addChild(upgradeButtonText);
+ui.addChild(text, upgradeButton);
+
+const selectTower = (tower: Tower): void => {
+  upgradeButton.removeAllListeners();
+  text.text = `Tower radius: ${tower.radius}`;
+  upgradeButton.clear();
+  upgradeButton.interactive = true;
+  upgradeButton.buttonMode = true;
+  upgradeButton
+    .beginFill(0x00ff00)
+    .drawRect(0, 0, upgradeButtonText.width + 32, 40)
+    .endFill();
+  upgradeButton.position.set(8, 48);
+
+  selectedTower = tower;
+  upgradeButton.on("mousedown", () => {
+    tower.upgrade();
+    selectTower(tower);
+  });
+};
+
 app.ticker.add((delta) => {
-  // const currentEnemy = enemy;
   moveEnemies(delta);
 
   Map.flat()
@@ -411,7 +241,7 @@ app.ticker.add((delta) => {
           20
         );
 
-        if (isInRange) {
+        if (isInRange && (landTile as Land).tower?.canShoot()) {
           (landTile as Land).tower?.shoot(enemy);
         }
       });
@@ -422,21 +252,19 @@ app.ticker.add((delta) => {
     .map((landTile) => (landTile as Land).tower)
     .forEach((tower) => {
       tower?.projectiles.forEach((projectile) => {
-        try {
-          projectile.move(delta);
-        } catch (error) {
-          if (error instanceof HitEnemyError) {
-            tower.removeProjectile(projectile);
+        if (projectile.target.isDead) {
+          tower.removeProjectile(projectile);
+        } else {
+          try {
+            projectile.move(delta);
+          } catch (error) {
+            if (error instanceof HitEnemyError) {
+              tower.removeProjectile(projectile);
+            } else if (error instanceof EnemyKilledError) {
+              deleteEnemy(projectile.target);
+            }
           }
         }
       });
     });
-  //   } catch (error) {
-  //     if (error instanceof FinishPathError) {
-  //       map.removeChild(currentEnemy.graphics);
-  //       enemy = undefined;
-  //     }
-  //   }
-  //   // enemy.current.graphics.position.x += 0.1 * delta;
-  // }
 });
